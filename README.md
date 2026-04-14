@@ -1,173 +1,191 @@
-# 🎓 Student GitHub Reviewer
+# Student GitHub Reviewer
 
-> **An AI-powered tool that analyzes a student's GitHub portfolio and delivers personalized mentorship feedback.**
+An AI-powered tool that analyzes a student's GitHub portfolio and delivers personalized mentorship feedback.
 
-Built with **FastAPI**, **LangGraph**, and **Groq (Llama 3.1)** — this project fetches a user's GitHub profile & repositories, then uses an AI "Code Mentor" agent to review their work and suggest improvements.
-
----
-
-## ✨ Features
-
-- 🔍 **GitHub Data Extraction** — Fetches recent repositories, languages, and profile stats via the GitHub API.
-- 🤖 **AI Mentor Feedback** — Uses Groq's Llama 3.1 model to generate encouraging, actionable code reviews.
-- 🔗 **LangGraph Agent Pipeline** — Orchestrates the review as a multi-step agent graph (extract → review).
-- ⚡ **FastAPI Backend** — Clean, fast REST API with automatic Swagger docs.
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-blue)](https://github-reviewer-ui-p5e6.onrender.com)
+[![Backend API](https://img.shields.io/badge/Backend%20API-Render-green)](https://student-github-reviewer-yraz.onrender.com/docs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🏗️ Architecture
+## Overview
+
+This project uses a multi-step AI agent pipeline to fetch a user's GitHub profile and repositories, then generates a professional code review with actionable suggestions — powered by Groq's Llama 3.1 model.
+
+**Live Application:** https://github-reviewer-ui-p5e6.onrender.com
+
+---
+
+## Architecture
 
 ```
 User Request
-    │
-    ▼
-┌──────────────────┐
-│   FastAPI Server  │  ← POST /review?username=...
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────────────────────┐
-│        LangGraph Pipeline        │
-│                                  │
-│  ┌────────────────────────────┐  │
-│  │  1. extract_github_data    │  │  → GitHub API
-│  └─────────────┬──────────────┘  │
-│                │                 │
-│  ┌─────────────▼──────────────┐  │
-│  │  2. code_mentor_review     │  │  → Groq / Llama 3.1
-│  └────────────────────────────┘  │
-└──────────────────────────────────┘
-         │
-         ▼
-   JSON Response (data + feedback)
+    |
+    v
+FastAPI Server  (POST /review?username=...)
+    |
+    v
+LangGraph Pipeline
+    |
+    +-- Step 1: extract_github_data  -->  GitHub API
+    |
+    +-- Step 2: code_mentor_review   -->  Groq / Llama 3.1
+    |
+    v
+JSON Response  (extracted data + mentor feedback)
+    |
+    v
+Streamlit UI  (renders feedback to the user)
 ```
 
 ---
 
-## 🚀 Getting Started
+## Tech Stack
+
+| Layer       | Technology              |
+|-------------|------------------------|
+| Frontend    | Streamlit               |
+| Backend     | FastAPI                 |
+| Agent       | LangGraph               |
+| LLM         | Groq (Llama 3.1 8B)    |
+| Deployment  | Render                  |
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-- **Python 3.10+**
-- A free [Groq API key](https://console.groq.com/keys)
-- A [GitHub Personal Access Token](https://github.com/settings/tokens) (optional, but recommended to avoid rate limits)
+- Python 3.10 or higher
+- A Groq API key — get one free at https://console.groq.com/keys
+- A GitHub Personal Access Token — generate one at https://github.com/settings/tokens (scope: `public_repo`)
 
 ### Installation
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/<your-username>/student-github-reviewer.git
+# Clone the repository
+git clone https://github.com/14-himanshu/student-github-reviewer.git
 cd student-github-reviewer
 
-# 2. Create & activate a virtual environment
+# Create and activate a virtual environment
 python -m venv venv
-source venv/bin/activate   # On Windows: venv\Scripts\activate
+source venv/bin/activate
 
-# 3. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 4. Set up environment variables
+# Set up environment variables
 cp .env.example .env
-# Then open .env and paste your API keys
+# Open .env and add your API keys
 ```
 
-### Run the Server
+### Running Locally
+
+Start the backend:
 
 ```bash
 uvicorn main:app --reload
 ```
 
-The API will be live at **http://127.0.0.1:8000**  
-📖 Interactive docs: **http://127.0.0.1:8000/docs**
+In a separate terminal, start the frontend:
+
+```bash
+streamlit run ui/app.py
+```
+
+- Backend API: http://127.0.0.1:8000
+- API Docs (Swagger): http://127.0.0.1:8000/docs
+- Frontend UI: http://localhost:8501
 
 ---
 
-## 📡 API Endpoints
+## API Reference
 
-| Method | Endpoint  | Description                        |
-|--------|-----------|------------------------------------|
-| GET    | `/`       | Health check                       |
-| POST   | `/review` | Analyze a GitHub user's portfolio |
+### GET /
 
-### Example Request
+Health check endpoint.
 
-```bash
-curl -X POST "http://127.0.0.1:8000/review?username=torvalds"
+**Response:**
+```json
+{ "message": "GitHub Reviewer backend is running perfectly!" }
 ```
 
-### Example Response
+### POST /review
 
+Analyzes a GitHub user's portfolio and returns AI mentor feedback.
+
+**Query Parameter:**
+
+| Parameter  | Type   | Description              |
+|------------|--------|--------------------------|
+| `username` | string | GitHub username to review |
+
+**Example:**
+```bash
+curl -X POST "https://student-github-reviewer-yraz.onrender.com/review?username=torvalds"
+```
+
+**Response:**
 ```json
 {
   "username": "torvalds",
   "extracted_data": {
-    "recent_repos": ["linux", "subsurface-for-dirk", "..."],
+    "recent_repos": ["linux", "subsurface-for-dirk"],
     "primary_languages": ["C", "C++"],
     "public_repos_count": 7
   },
-  "mentor_feedback": "Great work! Your expertise in C is evident from..."
+  "mentor_feedback": "Your expertise in C is evident..."
 }
 ```
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 student-github-reviewer/
 ├── agent/
 │   ├── __init__.py        # Package initializer
-│   ├── graph.py           # LangGraph workflow definition
-│   ├── nodes.py           # Agent node functions (extract, review)
-│   └── state.py           # TypedDict state schema
-├── main.py                # FastAPI application entry point
-├── requirements.txt       # Python dependencies
-├── .env.example           # Template for environment variables
-├── .gitignore             # Files excluded from version control
-├── LICENSE                # MIT License
-└── README.md              # You are here!
+│   ├── graph.py           # LangGraph workflow
+│   ├── nodes.py           # Agent node functions
+│   └── state.py           # State schema
+├── ui/
+│   └── app.py             # Streamlit frontend
+├── main.py                # FastAPI entry point
+├── requirements.txt       # Dependencies
+├── .env.example           # Environment variable template
+├── .gitignore
+├── LICENSE
+└── README.md
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Deployment
 
-| Technology   | Purpose                       |
-|-------------|-------------------------------|
-| FastAPI     | REST API framework            |
-| LangGraph   | Agent orchestration           |
-| LangChain   | LLM integration layer         |
-| Groq        | LLM inference (Llama 3.1)    |
-| Python      | Core language                 |
+This project is deployed as two separate services on Render:
+
+| Service  | Name                    | URL                                                |
+|----------|-------------------------|----------------------------------------------------|
+| Backend  | `github-reviewer-api`   | https://student-github-reviewer-yraz.onrender.com  |
+| Frontend | `github-reviewer-ui`    | https://github-reviewer-ui-p5e6.onrender.com       |
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to open an issue or submit a pull request.
+## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit your changes: `git commit -m 'feat: add your feature'`
+4. Push to the branch: `git push origin feature/your-feature`
 5. Open a Pull Request
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- [Groq](https://groq.com/) for blazing-fast LLM inference
-- [LangGraph](https://github.com/langchain-ai/langgraph) for agent orchestration
-- [FastAPI](https://fastapi.tiangolo.com/) for the excellent web framework
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-<p align="center">
-  Made with ❤️ by <strong>Himanshu Pandey</strong>
-</p>
+Built by [Himanshu Pandey](https://github.com/14-himanshu)
