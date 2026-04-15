@@ -52,7 +52,7 @@ if analyze:
             try:
                 response = requests.post(
                     f"{BACKEND_URL}/review?username={username}",
-                    timeout=60,
+                    timeout=120,
                 )
 
                 if response.status_code == 200:
