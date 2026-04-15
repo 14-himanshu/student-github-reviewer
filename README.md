@@ -154,6 +154,7 @@ student-github-reviewer/
 ├── main.py                # FastAPI entry point
 ├── requirements.txt       # Dependencies
 ├── .env.example           # Environment variable template
+├── render.yaml            # Render deployment config
 ├── .gitignore
 ├── LICENSE
 └── README.md
