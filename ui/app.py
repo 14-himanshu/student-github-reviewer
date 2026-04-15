@@ -1,6 +1,9 @@
+import os
 import streamlit as st
 import requests
 import json
+
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 st.set_page_config(
     page_title="GitHub Portfolio Reviewer",
@@ -48,7 +51,7 @@ if analyze:
         with st.spinner(f"Fetching data for **{username}**..."):
             try:
                 response = requests.post(
-                    f"https://student-github-reviewer-yraz.onrender.com/review?username={username}",
+                    f"{BACKEND_URL}/review?username={username}",
                     timeout=60,
                 )
 

@@ -1,0 +1,22 @@
+services:
+  # ── FastAPI Backend ──────────────────────────────────────────────
+  - type: web
+    name: student-github-reviewer
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false          # you paste the value in the Render dashboard
+      - key: GITHUB_TOKEN
+        sync: false
+
+  # ── Streamlit Frontend ───────────────────────────────────────────
+  - type: web
+    name: github-reviewer-ui
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: BACKEND_URL
+        value: https://student-github-reviewer-yraz.onrender.com
