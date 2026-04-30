@@ -1,12 +1,17 @@
 import os
+import time
 import requests
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from .state import ReviewState
+
 load_dotenv()
+
 # Set up the Groq AI brain using Llama 3.1
 llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.7)
+
+
 def extract_github_data(state: ReviewState):
     username = state["username"]
     github_token = os.getenv("GITHUB_TOKEN")
@@ -21,15 +26,32 @@ def extract_github_data(state: ReviewState):
             repo_names = [repo["name"] for repo in repos_data]
             languages = list(set([repo["language"] for repo in repos_data if repo["language"]]))
             real_data = {
-            "recent_repos": repo_names,
-            "primary_languages": languages,
-            "public_repos_count": user_resp.json().get("public_repos", 0)
+                "recent_repos": repo_names,
+                "primary_languages": languages,
+                "public_repos_count": user_resp.json().get("public_repos", 0),
             }
             return {"github_data": real_data}
         else:
             return {"github_data": {"error": f"API Error: User {username} not found."}}
     except Exception as e:
         return {"github_data": {"error": str(e)}}
+
+
+def _invoke_llm_with_retry(messages, max_retries: int = 3, base_delay: float = 5.0):
+    """Invoke the LLM with exponential backoff retry on rate limit (429) errors."""
+    for attempt in range(max_retries):
+        try:
+            return llm.invoke(messages)
+        except Exception as e:
+            error_str = str(e).lower()
+            is_rate_limit = "429" in str(e) or "rate limit" in error_str or "rate_limit" in error_str
+            if is_rate_limit and attempt < max_retries - 1:
+                wait = base_delay * (2 ** attempt)
+                time.sleep(wait)
+            else:
+                raise
+
+
 def code_mentor_review(state: ReviewState):
     username = state["username"]
     data = state["github_data"]
@@ -40,5 +62,5 @@ def code_mentor_review(state: ReviewState):
     use,
     and suggest 1 or 2 actionable improvements (like adding documentation or tests).
     """
-    response = llm.invoke([HumanMessage(content=prompt)])
+    response = _invoke_llm_with_retry([HumanMessage(content=prompt)])
     return {"feedback": response.content}

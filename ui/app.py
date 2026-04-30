@@ -102,6 +102,11 @@ if analyze:
 
                 elif response.status_code == 404:
                     st.error(f"GitHub user `{username}` was not found. Please check the username and try again.")
+                elif response.status_code == 429:
+                    st.warning(
+                        "⚠️ The AI service is currently rate-limited (too many requests). "
+                        "Please wait 30–60 seconds and try again."
+                    )
                 else:
                     st.error(f"Backend returned an error (status {response.status_code}). Please try again.")
 

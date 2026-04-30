@@ -5,7 +5,7 @@ An AI-powered tool that analyzes a student's GitHub portfolio
 and provides mentorship feedback using LangGraph + Groq (Llama 3.1).
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from agent.graph import github_reviewer_app
 
 app = FastAPI(
@@ -33,7 +33,16 @@ def review_portfolio(username: str):
     initial_state = {"username": username}
 
     # 2. Run the LangGraph pipeline
-    result = github_reviewer_app.invoke(initial_state)
+    try:
+        result = github_reviewer_app.invoke(initial_state)
+    except Exception as e:
+        error_str = str(e)
+        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="Groq API rate limit exceeded. Please wait a moment and try again.",
+            )
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {error_str}")
 
     # 3. Return the AI's analysis
     return {
