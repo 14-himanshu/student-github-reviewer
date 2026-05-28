@@ -31,7 +31,8 @@ def _build_fallback_feedback(username: str, data: dict) -> str:
         "consistent activity and learning momentum.\n\n"
         "To improve your portfolio impact:\n"
         "1. Add concise README files that explain project goals, setup, and key decisions.\n"
-        "2. Add tests and short architecture notes to show reliability and engineering maturity."
+        "2. Add tests and short architecture notes to show reliability and engineering maturity.\n\n"
+        "Keep building and learning—your progress is heading in the right direction."
     )
 
 
