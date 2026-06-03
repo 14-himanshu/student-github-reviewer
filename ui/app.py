@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import requests
 import json
+import re
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
@@ -64,7 +65,16 @@ if analyze:
                     st.divider()
 
                     # --- GitHub Stats ---
-                    st.subheader("GitHub Overview")
+                    avatar_url = extracted.get("avatar_url", "")
+                    followers = extracted.get("followers", 0)
+
+                    col_img, col_txt = st.columns([1, 4])
+                    with col_img:
+                        if avatar_url:
+                            st.image(avatar_url, width=100)
+                    with col_txt:
+                        st.subheader(f"Overview for {username}")
+                        st.write(f"**Followers:** {followers}")
 
                     repos = extracted.get("recent_repos", [])
                     languages = extracted.get("primary_languages", [])
@@ -97,8 +107,61 @@ if analyze:
                     st.divider()
 
                     # --- AI Feedback ---
+                    # Parse Grade and Badges
+                    grade_match = re.search(r"\[GRADE:\s*(.*?)\]", feedback)
+                    badges_match = re.search(r"\[BADGES:\s*(.*?)\]", feedback)
+                    
+                    grade = grade_match.group(1).strip() if grade_match else None
+                    badges = badges_match.group(1).strip() if badges_match else None
+                    
+                    # Clean feedback text
+                    clean_feedback = re.sub(r"\[GRADE:\s*.*?\]", "", feedback)
+                    clean_feedback = re.sub(r"\[BADGES:\s*.*?\]", "", clean_feedback).strip()
+
                     st.subheader("Mentor Feedback")
-                    st.markdown(feedback)
+                    if grade or badges:
+                        g_col, b_col = st.columns([1, 4])
+                        with g_col:
+                            if grade:
+                                st.metric("Overall Grade", grade)
+                        with b_col:
+                            if badges:
+                                st.write("**Awarded Badges:**")
+                                # Display badges as inline markdown code snippets
+                                badges_list = [b.strip() for b in badges.split(",")]
+                                badges_md = " ".join([f"`🏆 {b}`" for b in badges_list])
+                                st.markdown(badges_md)
+                        st.divider()
+
+                    st.markdown(clean_feedback)
+
+                    st.divider()
+                    st.download_button(
+                        label="Download Report",
+                        data=clean_feedback,
+                        file_name=f"{username}_portfolio_review.md",
+                        mime="text/markdown",
+                        type="primary"
+                    )
+
+                    # --- Career Tools ---
+                    st.subheader("Career Tools")
+                    with st.expander("📄 Generate Cover Letter"):
+                        st.write("Generate a professional cover letter based on your GitHub portfolio.")
+                        if st.button("Generate Now", key="btn_cover_letter"):
+                            with st.spinner("Writing your cover letter..."):
+                                try:
+                                    cl_resp = requests.post(f"{BACKEND_URL}/cover-letter?username={username}", timeout=60)
+                                    if cl_resp.status_code == 200:
+                                        cl_data = cl_resp.json().get("cover_letter", "")
+                                        st.text_area("Your Cover Letter", value=cl_data, height=300)
+                                        st.download_button("Download Cover Letter", data=cl_data, file_name=f"{username}_cover_letter.md")
+                                    elif cl_resp.status_code == 429:
+                                        st.warning("Rate limit exceeded. Please try again later.")
+                                    else:
+                                        st.error(f"Failed to generate cover letter. (Status {cl_resp.status_code})")
+                                except Exception as e:
+                                    st.error(f"Error connecting to backend: {e}")
 
                 elif response.status_code == 404:
                     st.error(f"GitHub user `{username}` was not found. Please check the username and try again.")
