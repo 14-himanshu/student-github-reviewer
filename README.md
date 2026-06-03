@@ -16,6 +16,16 @@ This project uses a multi-step AI agent pipeline to fetch a user's GitHub profil
 
 ---
 
+## Features
+
+- **AI Code Mentor Review:** Generates a professional code review using Groq's Llama 3.1 based on a user's repositories, languages, and READMEs.
+- **Gamification (Grades and Badges):** The AI automatically awards an overall letter grade and custom achievement badges based on the user's GitHub activity.
+- **AI Cover Letter Generator:** Instantly generate a highly professional, 3-paragraph cover letter tailored to a Software Engineering role using the user's specific GitHub portfolio data.
+- **In-Memory Caching:** Subsequent requests for the same GitHub user within 24 hours load instantly, heavily reducing API rate limits.
+- **Robust Rate Limit Handling:** Implements exponential backoff retries and elegant fallback feedback for handling 429 Rate Limit errors gracefully.
+
+---
+
 ## Architecture
 
 ```
@@ -130,11 +140,38 @@ curl -X POST "https://student-github-reviewer-yraz.onrender.com/review?username=
 {
   "username": "torvalds",
   "extracted_data": {
+    "avatar_url": "https://avatars.githubusercontent.com/u/1024025?v=4",
+    "followers": 200000,
     "recent_repos": ["linux", "subsurface-for-dirk"],
     "primary_languages": ["C", "C++"],
-    "public_repos_count": 7
+    "public_repos_count": 7,
+    "repo_readmes": {
+       "linux": "Linux kernel..."
+    }
   },
-  "mentor_feedback": "Your expertise in C is evident..."
+  "mentor_feedback": "[GRADE: A+]\n[BADGES: C Master, Open Source Legend]\n\nYour expertise in C is evident..."
+}
+```
+
+### POST /cover-letter
+
+Generates a professional cover letter based on cached GitHub data. Must be called after `/review`.
+
+**Query Parameter:**
+
+| Parameter  | Type   | Description              |
+|------------|--------|--------------------------|
+| `username` | string | GitHub username to review |
+
+**Example:**
+```bash
+curl -X POST "https://student-github-reviewer-yraz.onrender.com/cover-letter?username=torvalds"
+```
+
+**Response:**
+```json
+{
+  "cover_letter": "Dear Hiring Manager, ..."
 }
 ```
 
