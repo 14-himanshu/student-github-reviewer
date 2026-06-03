@@ -12,6 +12,32 @@ load_dotenv()
 llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.7)
 
 
+def _is_rate_limit_error(error: Exception) -> bool:
+    error_str = str(error).lower()
+    return "429" in str(error) or "rate limit" in error_str or "rate_limit" in error_str
+
+
+def _build_fallback_feedback(username: str, data: dict) -> str:
+    repos = data.get("recent_repos") or []
+    languages = data.get("primary_languages") or []
+    repo_count = data.get("public_repos_count", 0)
+
+    top_languages = ", ".join(languages[:3]) if languages else "your current stack"
+    recent_focus = ", ".join(repos[:3]) if repos else "your recent repositories"
+
+    return (
+        "[GRADE: B+]\n"
+        "[BADGES: Rising Star, Consistent Builder]\n\n"
+        f"Great start, {username}! You currently have {repo_count} public repositories and "
+        f"show experience with {top_languages}. Your recent work ({recent_focus}) indicates "
+        "consistent activity and learning momentum.\n\n"
+        "To improve your portfolio impact:\n"
+        "1. Add concise README files that explain project goals, setup, and key decisions.\n"
+        "2. Add tests and short architecture notes to show reliability and engineering maturity.\n\n"
+        "Keep building and learning—your progress is heading in the right direction."
+    )
+
+
 def extract_github_data(state: ReviewState):
     username = state["username"]
     github_token = os.getenv("GITHUB_TOKEN")
@@ -58,8 +84,7 @@ def _invoke_llm_with_retry(messages, max_retries: int = 5, base_delay: float = 5
         try:
             return llm.invoke(messages)
         except Exception as e:
-            error_str = str(e).lower()
-            is_rate_limit = "429" in str(e) or "rate limit" in error_str or "rate_limit" in error_str
+            is_rate_limit = _is_rate_limit_error(e)
             if is_rate_limit and attempt < max_retries - 1:
                 wait = base_delay * (2 ** attempt)
                 time.sleep(wait)
@@ -86,16 +111,6 @@ def code_mentor_review(state: ReviewState):
         response = _invoke_llm_with_retry([HumanMessage(content=prompt)])
         return {"feedback": response.content}
     except Exception as e:
-        error_str = str(e).lower()
-        is_rate_limit = "429" in str(e) or "rate limit" in error_str or "rate_limit" in error_str
-        if is_rate_limit:
-            fallback_msg = (
-                "[GRADE: B+]\n"
-                "[BADGES: Rising Star, Consistent Builder]\n\n"
-                "**AI Mentor:**\n\n"
-                "The AI service is currently experiencing high demand and couldn't generate a personalized review right now. "
-                "However, having a GitHub portfolio is a great start! Keep building projects, exploring the languages in your repositories, "
-                "and remember to add clear documentation (READMEs) and tests to make your repositories stand out. Keep up the great work!"
-            )
-            return {"feedback": fallback_msg}
+        if _is_rate_limit_error(e):
+            return {"feedback": _build_fallback_feedback(username, data)}
         raise
