@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage
 from .state import ReviewState
+from .integrations import fetch_leetcode_stats, fetch_stackoverflow_stats
 
 load_dotenv()
 
@@ -40,18 +41,26 @@ def _build_fallback_feedback(username: str, data: dict) -> str:
 
 def extract_github_data(state: ReviewState):
     username = state["username"]
+    leetcode_user = state.get("leetcode")
+    stackoverflow_user = state.get("stackoverflow")
     github_token = os.getenv("GITHUB_TOKEN")
     headers = {"Authorization": f"Bearer {github_token}"} if github_token else {}
     try:
         user_url = f"https://api.github.com/users/{username}"
         user_resp = requests.get(user_url, headers=headers)
-        repos_url = f"https://api.github.com/users/{username}/repos?sort=updated&per_page=5"
+        repos_url = f"https://api.github.com/users/{username}/repos?sort=updated&per_page=100"
         repos_resp = requests.get(repos_url, headers=headers)
         if user_resp.status_code == 200 and repos_resp.status_code == 200:
+            from collections import Counter
             user_data = user_resp.json()
             repos_data = repos_resp.json()
-            repo_names = [repo["name"] for repo in repos_data]
-            languages = list(set([repo["language"] for repo in repos_data if repo["language"]]))
+            
+            recent_repos_data = repos_data[:5]
+            repo_names = [repo["name"] for repo in recent_repos_data]
+            
+            all_langs = [repo["language"] for repo in repos_data if repo.get("language")]
+            lang_counts = Counter(all_langs)
+            languages = [lang for lang, count in lang_counts.most_common(10)]
             
             # Fetch README for top 2 repos
             readmes = {}
@@ -71,6 +80,10 @@ def extract_github_data(state: ReviewState):
                 "public_repos_count": user_data.get("public_repos", 0),
                 "repo_readmes": readmes
             }
+            if leetcode_user:
+                real_data["leetcode"] = fetch_leetcode_stats(leetcode_user)
+            if stackoverflow_user:
+                real_data["stackoverflow"] = fetch_stackoverflow_stats(stackoverflow_user)
             return {"github_data": real_data}
         else:
             return {"github_data": {"error": f"API Error: User {username} not found."}}
