@@ -91,21 +91,13 @@ cp .env.example .env
 
 ### Running Locally
 
-Start the backend:
+Start the backend (which also serves the frontend):
 
 ```bash
 uvicorn main:app --reload
 ```
 
-In a separate terminal, start the frontend:
-
-```bash
-streamlit run ui/app.py
-```
-
-- Backend API: http://127.0.0.1:8000
-- API Docs (Swagger): http://127.0.0.1:8000/docs
-- Frontend UI: http://localhost:8501
+Then open your browser and navigate to `http://localhost:8000` to view the application!
 
 ---
 
