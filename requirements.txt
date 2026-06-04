@@ -4,6 +4,7 @@ langgraph
 langchain
 langchain-groq
 python-dotenv
-requestsfpdf2==2.8.7
+requests
+fpdf2==2.8.7
 markdown==3.10.2
 sqlalchemy==2.0.50
