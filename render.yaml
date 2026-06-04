@@ -10,6 +10,8 @@ services:
         sync: false          # you paste the value in the Render dashboard
       - key: GITHUB_TOKEN
         sync: false
+      - key: PORT
+        value: 10000
 
   # ── Streamlit Frontend ───────────────────────────────────────────
   - type: web
@@ -19,4 +21,4 @@ services:
     startCommand: streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0
     envVars:
       - key: BACKEND_URL
-        value: https://student-github-reviewer-yraz.onrender.com
+        value: http://student-github-reviewer:10000
