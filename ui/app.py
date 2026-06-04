@@ -53,6 +53,7 @@ if analyze:
             try:
                 response = requests.post(
                     f"{BACKEND_URL}/review?username={username}",
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
                     timeout=120,
                 )
 
@@ -151,7 +152,7 @@ if analyze:
                         if st.button("Generate Now", key="btn_cover_letter"):
                             with st.spinner("Writing your cover letter..."):
                                 try:
-                                    cl_resp = requests.post(f"{BACKEND_URL}/cover-letter?username={username}", timeout=60)
+                                    cl_resp = requests.post(f"{BACKEND_URL}/cover-letter?username={username}", headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=60)
                                     if cl_resp.status_code == 200:
                                         cl_data = cl_resp.json().get("cover_letter", "")
                                         st.text_area("Your Cover Letter", value=cl_data, height=300)
