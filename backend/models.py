@@ -11,3 +11,10 @@ class Review(Base):
     github_data = Column(JSON)
     feedback_markdown = Column(Text)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class CacheEntry(Base):
+    __tablename__ = "cache_entries"
+
+    username = Column(String, primary_key=True, index=True)
+    data = Column(JSON)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
