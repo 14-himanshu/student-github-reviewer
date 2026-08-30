@@ -10,7 +10,7 @@ from .integrations import fetch_leetcode_stats, fetch_stackoverflow_stats
 load_dotenv()
 
 # Set up the Groq AI brain using Llama 3.1
-llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.7)
+llm = ChatGroq(model="llama3-8b-8192", temperature=0.7)
 
 
 def _is_rate_limit_error(error: Exception) -> bool:

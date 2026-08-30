@@ -1,24 +1,34 @@
-"""
-Student GitHub Reviewer — FastAPI Backend
-
-An AI-powered tool that analyzes a student's GitHub portfolio
-and provides mentorship feedback using LangGraph + Groq (Llama 3.1).
-"""
-
-import time
+import datetime
+import logging
 import os
-from fastapi import FastAPI, HTTPException, Response, Depends
+import requests
+from fastapi import FastAPI, HTTPException, Response, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy.orm import Session
+
 from agent.graph import github_reviewer_app
+from agent.nodes import _invoke_llm_with_retry, llm
+from agent.extensions import generate_roadmap_and_gaps, generate_project_ideas, generate_interview_questions, generate_repo_deep_dive
+from backend.pdf_generator import create_resume_pdf
+from backend.database import get_db, engine
+import backend.models as models
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from pydantic import BaseModel
+from typing import List
+
+# Setup Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="DevScope — AI GitHub Portfolio Reviewer",
     description="AI-powered GitHub portfolio analysis and mentorship feedback.",
     version="1.0.0",
 )
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,74 +38,71 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory cache to save API calls
-cache = {}
+app.mount("/assets", StaticFiles(directory="frontend"), name="assets")
+
 CACHE_TTL = 24 * 60 * 60  # 24 hours
 
-# Serve frontend assets
-app.mount("/assets", StaticFiles(directory="frontend"), name="assets")
+def get_cached_data(username: str, db: Session):
+    entry = db.query(models.CacheEntry).filter(models.CacheEntry.username == username).first()
+    if entry:
+        if (datetime.datetime.utcnow() - entry.timestamp).total_seconds() < CACHE_TTL:
+            return entry.data
+    return None
+
+def set_cached_data(username: str, data: dict, db: Session):
+    entry = db.query(models.CacheEntry).filter(models.CacheEntry.username == username).first()
+    if entry:
+        entry.data = data
+        entry.timestamp = datetime.datetime.utcnow()
+    else:
+        entry = models.CacheEntry(username=username, data=data, timestamp=datetime.datetime.utcnow())
+        db.add(entry)
+    db.commit()
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    error_str = str(exc)
+    logger.error(f"Unhandled exception: {error_str}", exc_info=True)
+    if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Groq API rate limit exceeded. Please wait a moment and try again."},
+        )
+    return JSONResponse(status_code=500, content={"detail": f"An internal error occurred: {error_str}"})
+
 
 @app.get("/")
 def home():
-    """Serve the frontend."""
     return FileResponse("frontend/index.html")
 
-
 @app.post("/review")
-def review_portfolio(username: str, leetcode: str = None, stackoverflow: str = None):
-    """
-    Analyze a GitHub user's portfolio and return AI mentor feedback.
+def review_portfolio(username: str, leetcode: str = None, stackoverflow: str = None, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(username, db)
+    if cached_data:
+        logger.info(f"Returning cached data for {username}")
+        return cached_data
 
-    Args:
-        username: GitHub username to review.
-    """
-    current_time = time.time()
-    if username in cache:
-        cached_data, timestamp = cache[username]
-        if current_time - timestamp < CACHE_TTL:
-            return cached_data
-
-    # 1. Create the starting state for the agent graph
     initial_state = {"username": username, "leetcode": leetcode, "stackoverflow": stackoverflow}
+    
+    logger.info(f"Running agent graph for {username}")
+    result = github_reviewer_app.invoke(initial_state)
 
-    # 2. Run the LangGraph pipeline
-    try:
-        result = github_reviewer_app.invoke(initial_state)
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(
-                status_code=429,
-                detail="Groq API rate limit exceeded. Please wait a moment and try again.",
-            )
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {error_str}")
-
-    # 3. Return the AI's analysis
     result_data = {
         "username": result["username"],
         "extracted_data": result.get("github_data"),
         "mentor_feedback": result.get("feedback"),
     }
     
-    # Save to cache
-    cache[username] = (result_data, current_time)
+    set_cached_data(username, result_data, db)
     return result_data
 
-
-from langchain_core.messages import HumanMessage
-from agent.nodes import _invoke_llm_with_retry
-
 @app.post("/cover-letter")
-def generate_cover_letter(username: str):
-    """
-    Generate a professional cover letter based on cached GitHub data.
-    """
-    if username not in cache:
+def generate_cover_letter(username: str, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
     
-    cached_data, _ = cache[username]
     github_data = cached_data.get("extracted_data")
-    
     prompt = f"""
     You are an expert career coach. Write a highly professional, 3-paragraph cover letter for a Software Engineering role for '{username}'.
     Base the cover letter strictly on this GitHub portfolio data:
@@ -105,80 +112,45 @@ def generate_cover_letter(username: str):
     Emphasize their top languages and specific repositories. Write directly from the perspective of the applicant.
     """
     
-    try:
-        response = _invoke_llm_with_retry([HumanMessage(content=prompt)])
-        return {"cover_letter": response.content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(
-                status_code=429,
-                detail="Groq API rate limit exceeded. Please wait a moment and try again.",
-            )
-        raise HTTPException(status_code=500, detail=f"Generation failed: {error_str}")
-
-from agent.extensions import generate_roadmap_and_gaps, generate_project_ideas, generate_interview_questions
+    response = _invoke_llm_with_retry([HumanMessage(content=prompt)])
+    return {"cover_letter": response.content}
 
 @app.post("/roadmap")
-def get_roadmap(username: str):
-    if username not in cache:
+def get_roadmap(username: str, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
-    cached_data, _ = cache[username]
-    try:
-        content = generate_roadmap_and_gaps(username, cached_data.get("extracted_data"))
-        return {"roadmap": content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(status_code=429, detail="Groq API rate limit exceeded. Please wait a moment and try again.")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {error_str}")
+    
+    content = generate_roadmap_and_gaps(username, cached_data.get("extracted_data"))
+    return {"roadmap": content}
 
 @app.post("/project-ideas")
-def get_project_ideas(username: str):
-    if username not in cache:
+def get_project_ideas(username: str, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
-    cached_data, _ = cache[username]
-    try:
-        content = generate_project_ideas(username, cached_data.get("extracted_data"))
-        return {"ideas": content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(status_code=429, detail="Groq API rate limit exceeded. Please wait a moment and try again.")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {error_str}")
+    
+    content = generate_project_ideas(username, cached_data.get("extracted_data"))
+    return {"ideas": content}
 
 @app.post("/interview-prep")
-def get_interview_prep(username: str):
-    if username not in cache:
+def get_interview_prep(username: str, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
-    cached_data, _ = cache[username]
-    try:
-        content = generate_interview_questions(username, cached_data.get("extracted_data"))
-        return {"questions": content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(status_code=429, detail="Groq API rate limit exceeded. Please wait a moment and try again.")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {error_str}")
-
-from backend.pdf_generator import create_resume_pdf
+    
+    content = generate_interview_questions(username, cached_data.get("extracted_data"))
+    return {"questions": content}
 
 @app.post("/generate-pdf")
-def generate_pdf(username: str):
-    if username not in cache:
+def generate_pdf(username: str, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
-    cached_data, _ = cache[username]
-    feedback = cached_data.get("mentor_feedback", "")
     
-    try:
-        pdf_bytes = create_resume_pdf(username, feedback)
-        return Response(content=pdf_bytes, media_type="application/pdf")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
-
-import os
-import requests
-from agent.extensions import generate_repo_deep_dive
+    feedback = cached_data.get("mentor_feedback", "")
+    pdf_bytes = create_resume_pdf(username, feedback)
+    return Response(content=pdf_bytes, media_type="application/pdf")
 
 @app.post("/repo-deep-dive")
 def repo_deep_dive(username: str, repo_name: str):
@@ -206,26 +178,14 @@ def repo_deep_dive(username: str, repo_name: str):
         "readme_snippet": readme_text
     }
     
-    try:
-        content = generate_repo_deep_dive(username, repo_name, repo_data)
-        return {"deep_dive": content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(status_code=429, detail="Groq API rate limit exceeded.")
-        raise HTTPException(status_code=500, detail=f"Generation failed: {error_str}")
-
-from sqlalchemy.orm import Session
-from backend.database import get_db, engine
-import backend.models as models
-
-models.Base.metadata.create_all(bind=engine)
+    content = generate_repo_deep_dive(username, repo_name, repo_data)
+    return {"deep_dive": content}
 
 @app.post("/reviews/save")
 def save_review(username: str, db: Session = Depends(get_db)):
-    if username not in cache:
+    cached_data = get_cached_data(username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
-    cached_data, _ = cache[username]
     
     new_review = models.Review(
         username=username,
@@ -249,9 +209,6 @@ def get_review(review_id: str, db: Session = Depends(get_db)):
         "created_at": review.created_at
     }
 
-from pydantic import BaseModel
-from typing import List
-
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -261,15 +218,12 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
 
 @app.post("/chat")
-def chat_with_mentor(request: ChatRequest):
-    if request.username not in cache:
+def chat_with_mentor(request: ChatRequest, db: Session = Depends(get_db)):
+    cached_data = get_cached_data(request.username, db)
+    if not cached_data:
         raise HTTPException(status_code=400, detail="User data not found in cache. Please run an analysis first.")
     
-    cached_data, _ = cache[request.username]
     github_data = cached_data.get("extracted_data")
-    
-    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-    from agent.nodes import llm
     
     system_prompt = f"You are a helpful AI Code Mentor. You are currently mentoring {request.username}. Here is their portfolio data: {github_data}. Answer their questions concisely and supportively."
     
@@ -280,11 +234,5 @@ def chat_with_mentor(request: ChatRequest):
         elif m.role == "assistant":
             langchain_msgs.append(AIMessage(content=m.content))
             
-    try:
-        response = llm.invoke(langchain_msgs)
-        return {"response": response.content}
-    except Exception as e:
-        error_str = str(e)
-        if "429" in error_str or "rate limit" in error_str.lower() or "rate_limit" in error_str.lower():
-            raise HTTPException(status_code=429, detail="Groq API rate limit exceeded.")
-        raise HTTPException(status_code=500, detail=f"Chat failed: {error_str}")
+    response = llm.invoke(langchain_msgs)
+    return {"response": response.content}

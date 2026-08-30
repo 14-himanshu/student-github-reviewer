@@ -8,3 +8,7 @@ requests
 fpdf2==2.8.7
 markdown==3.10.2
 sqlalchemy==2.0.50
+pytest
+pytest-cov
+httpx
+ruff
